@@ -70,8 +70,8 @@ async fn test_cekunit_store_with_valid_data() {
         when.method(POST)
             .path("/cekunit")
             .body_includes("_token=csrf_store")
-            .body_includes("nama_nasabah=John Doe")
-            .body_includes("nopol=B 1234 ABC");
+            .body_includes("nama_nasabah=John+Doe")
+            .body_includes("nopol=B+1234+ABC");
         then.status(201);
     });
 
@@ -86,7 +86,6 @@ async fn test_cekunit_store_with_valid_data() {
 #[tokio::test]
 async fn test_cekunit_store_without_csrf_auto_fetches() {
     let (server, client) = setup().await;
-
     let root_mock = server.mock(|when, then| {
         when.method(GET).path("/");
         then.status(200)
