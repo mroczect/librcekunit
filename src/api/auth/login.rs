@@ -1,51 +1,35 @@
-use crate::handler::{Error, HttpClient, HttpMethod};
+use crate::error::Error;
+use crate::http_client::HttpClient;
+use crate::types::HttpMethod;
 use std::collections::HashMap;
+use tracing::{info, instrument};
 
+#[instrument(skip(client, password), fields(email = %email))]
 pub async fn login(client: &HttpClient, email: &str, password: &str) -> Result<(), Error> {
-    let resp = client.request(HttpMethod::GET, "/login", None).await?;
-    let body = resp.text().await?;
-    let csrf = HttpClient::parse_csrf_from_html(&body)?;
+    let token = client.fetch_csrf_token("/login").await?;
 
     let mut form = HashMap::new();
-    form.insert("_token", csrf.as_str());
-    form.insert("email", email);
-    form.insert("password", password);
+    form.insert("_token".to_string(), token);
+    form.insert("email".to_string(), email.to_string());
+    form.insert("password".to_string(), password.to_string());
 
     let resp = client
         .request(HttpMethod::POST, "/login", Some(form))
         .await?;
 
-    if resp.status().is_redirection() || resp.status().as_u16() == 302 {
-        
-        let mut xsrf_token = None;
-        for header_value in resp.headers().get_all("set-cookie") {
-            if let Ok(cookie_str) = header_value.to_str() {
-                if let Some(token) = extract_xsrf_from_cookie(cookie_str) {
-                    xsrf_token = Some(token);
-                    break; 
-                }
-            }
-        }
-        if let Some(token) = xsrf_token {
-            client.set_csrf_token(token).await;
-        }
-        Ok(())
-    } else {
-        let status = resp.status();
-        let error_body = resp.text().await.unwrap_or_default();
-        Err(Error::Auth(format!(
-            "Login gagal ({}): {}",
-            status, error_body
-        )))
-    }
-}
+    let status = resp.status();
 
-fn extract_xsrf_from_cookie(cookie_str: &str) -> Option<String> {
-    for part in cookie_str.split(';') {
-        let trimmed = part.trim();
-        if trimmed.starts_with("XSRF-TOKEN=") {
-            return Some(trimmed["XSRF-TOKEN=".len()..].to_string());
+    if status.is_success() || status.is_redirection() {
+        info!("Login successful");
+        client.set_csrf_token(String::new()).await;
+        Ok(())
+    } else if status.is_client_error() || status.is_server_error() {
+        let body = resp.text().await.unwrap_or_default();
+        if body.contains("These credentials do not match") {
+            return Err(Error::Auth("Invalid email or password".into()));
         }
+        Err(Error::Api(status.as_u16(), body))
+    } else {
+        Err(Error::Api(status.as_u16(), "Unexpected response".into()))
     }
-    None
 }
