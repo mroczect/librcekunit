@@ -318,15 +318,16 @@ async fn test_cekunit_get_unique_values() {
 #[tokio::test]
 async fn test_users_index_ok() {
     let (server, client) = setup().await;
+
     let mock = server.mock(|when, then| {
-        when.method(GET).path("/dashboard/users");
+        when.method(GET).path("/users");
         then.status(200).body("users list");
     });
+
     let resp = client.users_index().await.unwrap();
     assert_eq!(resp.status(), 200);
     mock.assert();
 }
-
 #[tokio::test]
 async fn test_request_get_with_query_params() {
     let (server, client) = setup().await;
