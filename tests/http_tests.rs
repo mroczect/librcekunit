@@ -1,6 +1,6 @@
+use librcekunit::HttpMethod;
 use librcekunit::http_client::HttpClient;
 use librcekunit::{Config, CookieStore};
-use librcekunit::HttpMethod;
 use std::collections::HashMap;
 
 #[tokio::test]
