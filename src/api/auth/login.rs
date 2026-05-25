@@ -21,7 +21,7 @@ pub async fn login(client: &HttpClient, email: &str, password: &str) -> Result<(
 
     if status.is_success() || status.is_redirection() {
         info!("Login successful");
-        client.set_csrf_token(String::new()).await;
+        client.reset_csrf_token().await;
         Ok(())
     } else if status.is_client_error() || status.is_server_error() {
         let body = resp.text().await.unwrap_or_default();
