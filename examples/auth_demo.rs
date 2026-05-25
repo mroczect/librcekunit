@@ -1,19 +1,3 @@
-//! # Authentication Demo (Robust)
-//!
-//! Demonstrates login and logout against a real server.
-//! After login it performs a quick GET to `/dashboard/cekunit` to verify
-//! that the session is truly authenticated.
-//!
-//! ## Prerequisites
-//!
-//! * `.env` file with `BASE_URL` set.
-//! * Optional: `DEMO_EMAIL`, `DEMO_PASSWORD`.
-//!
-//! ## Running
-//! ```bash
-//! cargo run --example auth_demo
-//! ```
-
 use librcekunit::{Client, Config, Error};
 use std::env;
 use tracing::{error, info, warn};
@@ -37,13 +21,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(base_url = %config.base_url, "Creating client");
     let client = Client::new(config).await?;
 
-    // ---- Login ----
     info!(%email, "Logging in");
     match client.login(&email, &password).await {
         Ok(()) => {
             info!("Login successful");
 
-            // Verify session by fetching a protected page
             info!("Fetching /dashboard to verify session");
             match client.cekunit_index().await {
                 Ok(resp) if resp.status().is_success() => {
@@ -60,7 +42,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            // ---- Logout ----
             info!("Logging out");
             match client.logout().await {
                 Ok(()) => {
@@ -68,9 +49,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Authentication flow completed successfully.");
                 }
                 Err(Error::Api(419, msg)) => {
-                    // 419 typically indicates CSRF token mismatch.
-                    // This can happen if the server's /logout endpoint expects
-                    // a different token source or session expiry.
                     error!(
                         "Logout failed with 419 (CSRF mismatch): {}. \
                          Ensure that the library's CSRF handling matches the server's expectations.",
