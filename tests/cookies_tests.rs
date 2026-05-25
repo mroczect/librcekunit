@@ -3,6 +3,7 @@ use serial_test::serial;
 use std::env;
 use std::path::PathBuf;
 use std::time::Duration;
+use tempfile::TempDir;
 
 #[test]
 fn test_config_new_basic() {
@@ -125,39 +126,52 @@ fn test_from_env_with_base_url_set() {
 #[test]
 #[serial]
 fn test_from_env_missing_base_url() {
-    // Save original values
+    let original_dir = env::current_dir().unwrap();
     let original_base_url = env::var("BASE_URL").ok();
     let original_dotenv_path = env::var("DOTENV_PATH").ok();
 
-    // Prevent dotenvy from loading .env file by pointing it to a nonexistent path
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    env::set_current_dir(tmp_dir.path()).unwrap();
+
     unsafe {
-        env::set_var("DOTENV_PATH", "/nonexistent_dotenv_file");
         env::remove_var("BASE_URL");
+        env::set_var("DOTENV_PATH", "/nonexistent_dotenv_file");
     }
 
-    let result = Config::from_env();
+    let result = librcekunit::Config::from_env();
 
-    // Restore original environment
+    env::set_current_dir(&original_dir).unwrap();
     if let Some(val) = original_base_url {
-        unsafe { env::set_var("BASE_URL", val); }
+        unsafe {
+            env::set_var("BASE_URL", val);
+        }
     } else {
-        unsafe { env::remove_var("BASE_URL"); }
+        unsafe {
+            env::remove_var("BASE_URL");
+        }
     }
     if let Some(val) = original_dotenv_path {
-        unsafe { env::set_var("DOTENV_PATH", val); }
+        unsafe {
+            env::set_var("DOTENV_PATH", val);
+        }
     } else {
-        unsafe { env::remove_var("DOTENV_PATH"); }
+        unsafe {
+            env::remove_var("DOTENV_PATH");
+        }
     }
 
-    assert!(result.is_err(), "from_env should error when BASE_URL is missing");
+    assert!(
+        result.is_err(),
+        "from_env harus error jika BASE_URL tidak ditemukan"
+    );
     match result.unwrap_err() {
         librcekunit::Error::Config(msg) => {
             assert!(
                 msg.contains("BASE_URL"),
-                "Error message must mention BASE_URL"
+                "Pesan error harus menyebut BASE_URL"
             );
         }
-        other => panic!("Expected Error::Config, got {:?}", other),
+        other => panic!("Diharapkan Error::Config, ditemukan {:?}", other),
     }
 }
 
