@@ -1,5 +1,7 @@
 use librcekunit::http_client::HttpClient;
 use librcekunit::{Config, CookieStore};
+use librcekunit::HttpMethod;
+use std::collections::HashMap;
 
 #[tokio::test]
 async fn test_parse_csrf_from_html_found() {
@@ -71,4 +73,46 @@ async fn test_cookie_jar_is_accessible() {
     let jar = http.cookie_jar();
 
     assert!(std::sync::Arc::strong_count(jar) >= 1);
+}
+
+#[tokio::test]
+async fn test_reset_csrf_token() {
+    let http = create_http_client().await;
+    http.set_csrf_token("some_token".to_string()).await;
+    assert!(http.get_csrf_token().await.is_some());
+
+    http.reset_csrf_token().await;
+    assert_eq!(http.get_csrf_token().await, None);
+}
+
+#[tokio::test]
+async fn test_ensure_csrf_fetches_when_none() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let config = Config::new(&server.base_url()).with_cookie_store(CookieStore::None);
+    let http = HttpClient::new(&config).await.unwrap();
+
+    http.reset_csrf_token().await;
+
+    let root_mock = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .body(r#"<input name="_token" value="fresh_token">"#);
+    });
+
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/any")
+            .body_includes("_token=fresh_token");
+        then.status(200);
+    });
+
+    let resp = http
+        .request(HttpMethod::POST, "/any", Some(HashMap::new()))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    root_mock.assert();
+    mock.assert();
 }
