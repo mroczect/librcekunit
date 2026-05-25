@@ -17,7 +17,7 @@ async fn test_cekunit_index_ok() {
     let (server, client) = setup().await;
 
     let mock = server.mock(|when, then| {
-        when.method(GET).path("/dashboard/cekunit");
+        when.method(GET).path("/dashboard/");
         then.status(200).body("list of units");
     });
 
@@ -31,7 +31,7 @@ async fn test_cekunit_index_server_error() {
     let (server, client) = setup().await;
 
     server.mock(|when, then| {
-        when.method(GET).path("/dashboard/cekunit");
+        when.method(GET).path("/dashboard/");
         then.status(500);
     });
 
@@ -47,7 +47,7 @@ async fn test_cekunit_store_sends_form_data() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/dashboard/cekunit")
+            .path("/dashboard/")
             .body_includes("_token=test_csrf")
             .body_includes("name=unit1")
             .body_includes("type=alpha");
@@ -75,7 +75,7 @@ async fn test_cekunit_store_without_csrf_fetches_from_root() {
 
     let post_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/dashboard/cekunit")
+            .path("/dashboard/")
             .body_includes("_token=root_csrf")
             .body_includes("key=value");
         then.status(201);
