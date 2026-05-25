@@ -38,8 +38,7 @@ impl Client {
     }
 
     pub async fn cekunit_index(&self) -> Result<reqwest::Response, Error> {
-        self.request(HttpMethod::GET, "/dashboard/", None)
-            .await
+        self.request(HttpMethod::GET, "/dashboard/", None).await
     }
 
     pub async fn cekunit_store(
