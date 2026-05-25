@@ -1,44 +1,40 @@
-use crate::api::auth;
-use crate::handler::{Config, Error, HttpClient, HttpMethod};
+use crate::config::Config;
+use crate::error::Error;
+use crate::http_client::HttpClient;
+use crate::types::HttpMethod;
 use std::collections::HashMap;
+use tracing::instrument;
 
 pub struct Client {
     http: HttpClient,
-    token_cache: auth::TokenCache,
 }
 
 impl Client {
+    #[instrument]
     pub async fn new(config: Config) -> Result<Self, Error> {
-        let http = HttpClient::new(&config)?;
-        Ok(Self {
-            http,
-            token_cache: auth::TokenCache::new(),
-        })
+        let http = HttpClient::new(&config).await?;
+        Ok(Self { http })
     }
 
     pub async fn login(&self, email: &str, password: &str) -> Result<(), Error> {
-        auth::login::login(&self.http, email, password).await
+        crate::api::auth::login::login(&self.http, email, password).await
     }
 
     pub async fn logout(&self) -> Result<(), Error> {
-        auth::logout::logout(&self.http).await
+        crate::api::auth::logout::logout(&self.http).await
     }
 
     pub fn http(&self) -> &HttpClient {
         &self.http
     }
 
-    pub fn cache(&self) -> &auth::TokenCache {
-        &self.token_cache
-    }
-
     pub async fn request(
         &self,
         method: HttpMethod,
         path: &str,
-        form_data: Option<HashMap<&str, &str>>,
+        body: Option<HashMap<String, String>>,
     ) -> Result<reqwest::Response, Error> {
-        self.http.request(method, path, form_data).await
+        self.http.request(method, path, body).await
     }
 
     pub async fn cekunit_index(&self) -> Result<reqwest::Response, Error> {
@@ -48,7 +44,7 @@ impl Client {
 
     pub async fn cekunit_store(
         &self,
-        data: HashMap<&str, &str>,
+        data: HashMap<String, String>,
     ) -> Result<reqwest::Response, Error> {
         self.request(HttpMethod::POST, "/dashboard/cekunit", Some(data))
             .await
