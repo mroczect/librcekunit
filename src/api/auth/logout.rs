@@ -6,6 +6,8 @@ use tracing::instrument;
 
 #[instrument(skip(client))]
 pub async fn logout(client: &HttpClient) -> Result<(), Error> {
+    client.reset_csrf_token().await;
+
     let form = HashMap::new();
     let resp = client
         .request(HttpMethod::POST, "/logout", Some(form))
