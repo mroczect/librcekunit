@@ -125,21 +125,31 @@ fn test_from_env_with_base_url_set() {
 #[test]
 #[serial]
 fn test_from_env_missing_base_url() {
-    let original = env::var("BASE_URL").ok();
+    // Save original values
+    let original_base_url = env::var("BASE_URL").ok();
+    let original_dotenv_path = env::var("DOTENV_PATH").ok();
+
+    // Prevent dotenvy from loading .env file by pointing it to a nonexistent path
     unsafe {
+        env::set_var("DOTENV_PATH", "/nonexistent_dotenv_file");
         env::remove_var("BASE_URL");
     }
+
     let result = Config::from_env();
 
-    if let Some(val) = original {
-        unsafe {
-            env::set_var("BASE_URL", val);
-        }
+    // Restore original environment
+    if let Some(val) = original_base_url {
+        unsafe { env::set_var("BASE_URL", val); }
+    } else {
+        unsafe { env::remove_var("BASE_URL"); }
     }
-    assert!(
-        result.is_err(),
-        "from_env should error when BASE_URL is missing"
-    );
+    if let Some(val) = original_dotenv_path {
+        unsafe { env::set_var("DOTENV_PATH", val); }
+    } else {
+        unsafe { env::remove_var("DOTENV_PATH"); }
+    }
+
+    assert!(result.is_err(), "from_env should error when BASE_URL is missing");
     match result.unwrap_err() {
         librcekunit::Error::Config(msg) => {
             assert!(
