@@ -16,17 +16,15 @@
 
 use librcekunit::{Client, Config, Error};
 use std::env;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     librcekunit::init_tracing();
     dotenvy::dotenv().ok();
 
-    let email = env::var("DEMO_EMAIL")
-        .unwrap_or_else(|_| "admin@example.com".to_string());
-    let password = env::var("DEMO_PASSWORD")
-        .unwrap_or_else(|_| "rahasia123".to_string());
+    let email = env::var("DEMO_EMAIL").unwrap_or_else(|_| "admin@example.com".to_string());
+    let password = env::var("DEMO_PASSWORD").unwrap_or_else(|_| "rahasia123".to_string());
 
     let config = Config::from_env()
         .unwrap_or_else(|_| {
