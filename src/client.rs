@@ -38,7 +38,7 @@ impl Client {
     }
 
     pub async fn cekunit_index(&self) -> Result<reqwest::Response, Error> {
-        self.request(HttpMethod::GET, "/dashboard/cekunit", None)
+        self.request(HttpMethod::GET, "/dashboard/", None)
             .await
     }
 
@@ -46,7 +46,7 @@ impl Client {
         &self,
         data: HashMap<String, String>,
     ) -> Result<reqwest::Response, Error> {
-        self.request(HttpMethod::POST, "/dashboard/cekunit", Some(data))
+        self.request(HttpMethod::POST, "/dashboard/", Some(data))
             .await
     }
 
