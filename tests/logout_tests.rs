@@ -1,5 +1,7 @@
+use httpmock::Mock;
 use httpmock::prelude::*;
 use librcekunit::{Client, Config, CookieStore, Error};
+use std::time::Duration;
 
 async fn setup() -> (MockServer, Client) {
     let server = MockServer::start();
@@ -32,13 +34,22 @@ async fn perform_dummy_login(server: &MockServer, client: &Client, csrf_token: &
     client.login("user@test.com", "pass").await.unwrap();
 }
 
+fn mock_root_csrf<'a>(server: &'a MockServer, token: &str) -> Mock<'a> {
+    server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .body(format!(r#"<input name="_token" value="{}">"#, token));
+    })
+}
+
 #[tokio::test]
 async fn test_logout_success() {
     let (server, client) = setup().await;
     perform_dummy_login(&server, &client, "login_xsrf").await;
 
+    let root_mock = mock_root_csrf(&server, "logout_token");
     let logout_mock = server.mock(|when, then| {
-        when.method(POST).path("/logout").body("_token=");
+        when.method(POST).path("/logout").body_includes("_token=");
         then.status(302);
     });
 
@@ -48,6 +59,7 @@ async fn test_logout_success() {
     let csrf = client.http().get_csrf_token().await;
     assert!(csrf.is_none() || csrf == Some(String::new()));
 
+    root_mock.assert();
     logout_mock.assert();
 }
 
@@ -56,6 +68,7 @@ async fn test_logout_failure_server_error() {
     let (server, client) = setup().await;
     perform_dummy_login(&server, &client, "tok").await;
 
+    let _root_mock = mock_root_csrf(&server, "any_token");
     let logout_mock = server.mock(|when, then| {
         when.method(POST).path("/logout");
         then.status(500).body("Internal Server Error");
@@ -100,8 +113,9 @@ async fn test_logout_with_prefilled_csrf_token() {
 
     client.http().set_csrf_token("my_token".to_string()).await;
 
+    let _root_mock = mock_root_csrf(&server, "fetched_token");
     let logout_mock = server.mock(|when, then| {
-        when.method(POST).path("/logout").body("_token=my_token");
+        when.method(POST).path("/logout").body_includes("_token=");
         then.status(200);
     });
 
@@ -115,9 +129,10 @@ async fn test_logout_network_timeout() {
     let (server, client) = setup().await;
     perform_dummy_login(&server, &client, "tok").await;
 
+    let _root_mock = mock_root_csrf(&server, "token");
     let _logout_mock = server.mock(|when, then| {
         when.method(POST).path("/logout");
-        then.status(302).delay(std::time::Duration::from_secs(10));
+        then.status(302).delay(Duration::from_secs(10));
     });
 
     let result = client.logout().await;
@@ -135,6 +150,7 @@ async fn test_logout_clears_session() {
     let (server, client) = setup().await;
     perform_dummy_login(&server, &client, "tok").await;
 
+    let _root_mock = mock_root_csrf(&server, "tok");
     let logout_mock = server.mock(|when, then| {
         when.method(POST).path("/logout");
         then.status(302);
