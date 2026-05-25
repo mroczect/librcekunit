@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Login successful");
 
             // Verify session by fetching a protected page
-            info!("Fetching /dashboard/cekunit to verify session");
+            info!("Fetching /dashboard to verify session");
             match client.cekunit_index().await {
                 Ok(resp) if resp.status().is_success() => {
                     info!("Session verified (status {})", resp.status());
