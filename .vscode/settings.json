@@ -1,6 +1,6 @@
 {
     "material-icon-theme.folders.associations": {
         "dashboard": "home",
-        ".local" : "environment"
+        ".local": "environment"
     }
 }
