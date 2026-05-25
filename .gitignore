@@ -27,3 +27,4 @@ dev/
 .local/
 *.csv
 /dev
+.velodiff.diff
