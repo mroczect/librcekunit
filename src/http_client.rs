@@ -156,4 +156,8 @@ impl HttpClient {
             }
         }
     }
+
+    pub async fn reset_csrf_token(&self) {
+        *self.csrf_token.write().await = None;
+    }
 }
