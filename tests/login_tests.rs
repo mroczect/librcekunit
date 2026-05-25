@@ -47,11 +47,7 @@ async fn test_login_success() {
     );
 
     let csrf = client.http().get_csrf_token().await;
-    assert_eq!(
-        csrf,
-        Some(String::new()),
-        "CSRF token harus kosong setelah login sukses"
-    );
+    assert_eq!(csrf, None, "CSRF token must be None after successful login");
 
     page_mock.assert();
     post_mock.assert();
