@@ -1,6 +1,10 @@
-use crate::handler::{Error, HttpClient, HttpMethod};
+use crate::error::Error;
+use crate::http_client::HttpClient;
+use crate::types::HttpMethod;
 use std::collections::HashMap;
+use tracing::instrument;
 
+#[instrument(skip(client))]
 pub async fn logout(client: &HttpClient) -> Result<(), Error> {
     let form = HashMap::new();
     let resp = client
@@ -8,9 +12,9 @@ pub async fn logout(client: &HttpClient) -> Result<(), Error> {
         .await?;
 
     if resp.status().is_redirection() || resp.status().is_success() {
-        client.set_csrf_token(String::new()).await;
+        client.clear_session().await;
         Ok(())
     } else {
-        Err(Error::Auth(format!("Logout gagal: {}", resp.status())))
+        Err(Error::Api(resp.status().as_u16(), "Logout failed".into()))
     }
 }
