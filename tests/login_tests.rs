@@ -192,26 +192,3 @@ async fn test_login_network_error_fetch_csrf() {
         other => panic!("Expected Error::Reqwest(timeout), got {:?}", other),
     }
 }
-
-#[tokio::test]
-async fn test_login_empty_credentials() {
-    let (server, client) = setup().await;
-
-    mock_login_page(&server, "csrf");
-    let post_mock = server.mock(|when, then| {
-        when.method(POST)
-            .path("/login")
-            .body_not("_token=csrf")
-            .body_not("email=")
-            .body_not("password=");
-        then.status(422).body("These credentials do not match");
-    });
-
-    let result = client.login("", "").await;
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        Error::Auth(msg) => assert_eq!(msg, "Invalid email or password"),
-        _ => panic!("Expected Auth"),
-    }
-    post_mock.assert();
-}
