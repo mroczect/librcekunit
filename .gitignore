@@ -32,3 +32,5 @@ snapshoot.md
 
 /.vscode
 /.zed
+# Local Netlify folder
+.netlify
