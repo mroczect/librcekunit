@@ -197,11 +197,7 @@ pub async fn show(client: &HttpClient, id: u64) -> Result<reqwest::Response, Err
         return Err(Error::Api(400, "Invalid resource ID: must be > 0".into()));
     }
     client
-        .request(
-            HttpMethod::GET,
-            &format!("{}/{}", PATH_RESOURCE, id),
-            None,
-        )
+        .request(HttpMethod::GET, &format!("{}/{}", PATH_RESOURCE, id), None)
         .await
 }
 
