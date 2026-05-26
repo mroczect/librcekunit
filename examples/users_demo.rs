@@ -37,10 +37,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Dashboard users page retrieved ({} bytes)", body.len());
         }
         Ok(resp) => {
-            warn!(
-                "Dashboard users returned unexpected status: {}",
-                resp.status()
-            );
+            let status = resp.status();
+            warn!("Dashboard users returned unexpected status: {}", status);
         }
         Err(e) => {
             error!("Failed to fetch dashboard users: {}", e);
@@ -54,7 +52,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Public users list retrieved ({} bytes)", body.len());
         }
         Ok(resp) => {
-            warn!("Public users returned status: {}", resp.status());
+            let status = resp.status();
+            warn!("Public users returned status: {}", status);
         }
         Err(e) => {
             error!("Failed to fetch public users: {}", e);
@@ -69,7 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("User detail for ID {}: {}", user_id, body);
         }
         Ok(resp) => {
-            warn!("Show user returned status: {}", resp.status());
+            let status = resp.status();
+            warn!("Show user returned status: {}", status);
         }
         Err(e) => {
             error!("Failed to show user: {}", e);
@@ -89,8 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("User ID {} updated successfully", update_id);
         }
         Ok(resp) => {
+            let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            warn!("Update user returned status {}: {}", resp.status(), body);
+            warn!("Update user returned status {}: {}", status, body);
         }
         Err(e) => {
             error!("Update user failed: {}", e);
