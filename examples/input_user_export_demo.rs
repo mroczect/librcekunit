@@ -82,12 +82,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 2: Configure export parameters.
     // These values can be changed or read from environment.
-    let export_format = "csv";          // Format: csv, json, xlsx, etc.
-    let sort_column = "created_at";     // Column to sort by.
-    let sort_direction = "asc";         // asc or desc.
-    let search_query = "";              // Optional search keyword.
-    let start_date = "2026-05-26";      // Filter records from this date (inclusive).
-    let end_date = "2026-05-26";        // Filter records to this date (inclusive).
+    let export_format = "csv"; // Format: csv, json, xlsx, etc.
+    let sort_column = "created_at"; // Column to sort by.
+    let sort_direction = "asc"; // asc or desc.
+    let search_query = ""; // Optional search keyword.
+    let start_date = "2026-05-26"; // Filter records from this date (inclusive).
+    let end_date = "2026-05-26"; // Filter records to this date (inclusive).
 
     // Build query parameters HashMap.
     let mut params = HashMap::new();
