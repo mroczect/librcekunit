@@ -79,7 +79,7 @@ async fn test_logout_failure_server_error() {
     match result.unwrap_err() {
         Error::Api(status, msg) => {
             assert_eq!(status, 500);
-            assert!(msg.contains("Logout failed"));
+            assert_eq!(msg, "Internal Server Error");
         }
         other => panic!("Expected Error::Api, got {:?}", other),
     }
