@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build debug
+      - name: Build (debug)
         run: cargo build --verbose
 
       - name: Run tests
@@ -30,7 +30,7 @@ jobs:
       - name: Build release
         run: cargo build --release --verbose
 
-      - name: Upload artifact
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: librcekunit-release
