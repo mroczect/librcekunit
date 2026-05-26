@@ -8,9 +8,8 @@ description = "a pure library implementation into rust programming language for 
 license = "AGPL-3.0"
 readme = "README.md"
 
-repository = "https://github.com/mroczect/librcekunit"
-homepage = "https://github.com/mroczect/librcekunit"
-documentation = "https://docs.rs/librcekunit"
+repository = "https://codeberg.org/mroczect/librcekunit"
+homepage = "https://codeberg.org/mroczect/librcekunit"
 
 keywords = [
     "cekunit",
