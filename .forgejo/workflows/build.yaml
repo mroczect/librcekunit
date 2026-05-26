@@ -1,41 +1,35 @@
 name: Rust CI
 
 on:
-    push:
-        branches: ["main"]
-    pull_request:
-        branches: ["main"]
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
 
 env:
-    CARGO_TERM_COLOR: always
-    RUST_LOG: trace
+  CARGO_TERM_COLOR: always
 
 jobs:
-    build-and-test:
-        runs-on: docker
+  build-and-test:
+    runs-on: codeberg-small
+    container:
+      image: rust:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v6
+      - name: Build (debug)
+        run: cargo build --verbose
 
-            - name: Set up Rust toolchain
-              uses: actions-rust-lang/setup-rust-toolchain@v1
-              with:
-                  toolchain: stable
-                  cache: true
+      - name: Run tests
+        run: cargo test --verbose
 
-            - name: Build (debug)
-              run: cargo build --verbose
+      - name: Build release
+        run: cargo build --release --verbose
 
-            - name: Run tests
-              run: cargo test --verbose
-
-            - name: Build release
-              run: cargo build --release --verbose
-
-            - name: Upload release artifact
-              uses: actions/upload-artifact@v7
-              with:
-                  name: librcekunit-release
-                  path: target/release/
-                  if-no-files-found: error
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: librcekunit-release
+          path: target/release/
+          if-no-files-found: error
