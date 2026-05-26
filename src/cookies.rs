@@ -1,9 +1,17 @@
 //! Cookie persistence utilities.
 //!
-//! This module provides functions to save and load cookies from a JSON file.
-//! It integrates with `reqwest::cookie::Jar` and uses `serde_json` for serialization.
+//! This module provides functions to save and load cookies to/from a JSON
+//! file. It integrates with [`reqwest::cookie::Jar`] and uses
+//! [`serde_json`] for serialization.
 //!
-//! # Examples
+//! # Security
+//!
+//! * Cookie files are written with default filesystem permissions; the
+//!   caller should ensure the path is in a secure location.
+//! * The JSON format stores cookie strings as‑is; sensitive session tokens
+//!   will be written to disk. Use [`CookieStore::None`] for in‑memory only.
+//!
+//! # Example
 //!
 //! ```
 //! use librcekunit::cookies::{save_cookies_to_file, load_cookies_from_file};
@@ -31,35 +39,38 @@ use std::fs;
 use std::path::Path;
 use tracing::{debug, instrument};
 
-/// Saves all cookies from a `Jar` to a JSON file.
+/// Saves all cookies from a [`Jar`] to a JSON file.
 ///
-/// Cookies are extracted for the given URL and serialized as a list of strings.
-/// If no cookies are present, the file is removed (if it exists) to avoid stale data.
+/// Cookies are extracted for the given URL and serialized as a list of
+/// strings. If no cookies are present, the file is **removed** (if it
+/// exists) to avoid stale data.
 ///
 /// # Arguments
 ///
-/// * `jar` - The cookie jar to read from.
-/// * `url` - The URL used to retrieve cookies (must be valid and match the cookie domain).
-/// * `path` - Filesystem path where the JSON file will be written.
+/// * `jar` – The cookie jar to read from.
+/// * `url` – The URL used to retrieve cookies. Must be a valid absolute
+///   URL; panics if parsing fails.
+/// * `path` – Filesystem path where the JSON file will be written.
 ///
 /// # Errors
 ///
-/// Returns `Error::Io` if file operations (remove, write) fail.
-/// Returns `Error::Json` if serialization to JSON fails.
+/// * [`Error::Io`] – If file operations (remove, write) fail.
+/// * [`Error::Json`] – If serialization to JSON fails.
 ///
 /// # Panics
 ///
-/// This function panics if the provided `url` cannot be parsed as a valid URL.
-/// This is intentional because the URL is expected to come from a known valid source
-/// (e.g., `Config::base_url` which is validated at creation).
+/// This function **panics** if the provided `url` cannot be parsed as a
+/// valid URL. This is intentional because the URL is expected to come from
+/// a known valid source (e.g., [`Config::base_url`](crate::Config::base_url)).
 ///
 /// # Examples
 ///
 /// ```no_run
-/// # use librcekunit::cookies::save_cookies_to_file;
-/// # use reqwest::cookie::Jar;
-/// # use std::sync::Arc;
-/// # use std::path::Path;
+/// use librcekunit::cookies::save_cookies_to_file;
+/// use reqwest::cookie::Jar;
+/// use std::sync::Arc;
+/// use std::path::Path;
+///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let jar = Arc::new(Jar::default());
 /// let url = "https://example.com";
@@ -91,35 +102,37 @@ pub fn save_cookies_to_file(jar: &Jar, url: &str, path: &Path) -> Result<(), Err
     Ok(())
 }
 
-/// Loads cookies from a JSON file into a `Jar`.
+/// Loads cookies from a JSON file into a [`Jar`].
 ///
-/// If the file does not exist, the function does nothing and returns `Ok(())`.
-/// Otherwise, it reads the file, deserializes a list of cookie strings,
-/// and adds each one to the jar for the given URL.
+/// If the file does not exist, the function does nothing and returns
+/// `Ok(())`. Otherwise, it reads the file, deserializes a list of cookie
+/// strings, and adds each one to the jar for the given URL.
 ///
 /// # Arguments
 ///
-/// * `jar` - The cookie jar to populate.
-/// * `url` - The URL associated with the cookies (must be valid).
-/// * `path` - Path to the JSON file.
+/// * `jar` – The cookie jar to populate.
+/// * `url` – The URL associated with the cookies (must be valid; panics
+///   on parse failure).
+/// * `path` – Path to the JSON file.
 ///
 /// # Errors
 ///
-/// Returns `Error::Io` if reading the file fails.
-/// Returns `Error::Json` if deserialization fails.
+/// * [`Error::Io`] – If reading the file fails.
+/// * [`Error::Json`] – If deserialization fails.
 ///
 /// # Panics
 ///
-/// This function panics if the provided `url` cannot be parsed.
-/// See `save_cookies_to_file` for rationale.
+/// This function panics if the provided `url` cannot be parsed. See
+/// [`save_cookies_to_file`] for rationale.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// # use librcekunit::cookies::load_cookies_from_file;
-/// # use reqwest::cookie::Jar;
-/// # use std::sync::Arc;
-/// # use std::path::Path;
+/// use librcekunit::cookies::load_cookies_from_file;
+/// use reqwest::cookie::Jar;
+/// use std::sync::Arc;
+/// use std::path::Path;
+///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let jar = Arc::new(Jar::default());
 /// let url = "https://example.com";
