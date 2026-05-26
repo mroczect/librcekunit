@@ -1,0 +1,572 @@
+LIBRCEKUNIT - COMPLETE API REFERENCE
+=====================================
+
+Library for interacting with the "cekunit" admin panel. Provides an HTTP client
+with automatic cookie management, CSRF token extraction/injection, and
+pre‑defined endpoints for all application resources.
+
+Version: 2.0.0
+License: AGPL-3.0
+Repository: https://codeberg.org/mroczect/librcekunit.git
+
+IMPORTANT: This library is NOT published on crates.io. Installation must be
+done directly from the GitHub repository. See Section 1 for details.
+
+
+TABLE OF CONTENTS
+-----------------
+
+1.  INSTALLATION
+2.  FEATURES OVERVIEW
+3.  MODULES AND RE‑EXPORTS
+4.  STRUCT Config
+5.  ENUM CookieStore
+6.  STRUCT Client
+7.  STRUCT HttpClient (internal)
+8.  ENUM Error
+9.  MODULE types
+10. MODULE cookies
+11. MODULE api
+     11.1 auth (login, logout)
+     11.2 crud (cekunit)
+     11.3 dashboard
+     11.4 input_data
+     11.5 input_user
+     11.6 pic
+     11.7 users
+12. UTILITY FUNCTION init_tracing
+13. COMPLETE USAGE EXAMPLES
+14. LICENSE INFORMATION
+
+
+===============================================================================
+1. INSTALLATION
+===============================================================================
+
+Since the library is not uploaded to crates.io, add it as a Git dependency in
+your Cargo.toml:
+
+  [dependencies]
+  librcekunit = { git = "https://codeberg.org/mroczect/librcekunit.git", tag = "v2.0.0" }
+
+To use a specific commit (e.g., for unreleased fixes):
+
+  librcekunit = { git = "https://codeberg.org/mroczect/librcekunit.git", rev = "a1b2c3d" }
+
+For local development (if you have cloned the repository):
+
+  librcekunit = { path = "../librcekunit" }
+
+After adding the dependency, run:
+
+  $ cargo build
+
+The library requires tokio (async runtime). Make sure your application uses
+tokio with the `macros` and `rt-multi-thread` features (or full).
+
+
+===============================================================================
+2. FEATURES OVERVIEW
+===============================================================================
+
+  +----------------------------------+----------------------------------------------------+
+  | Feature                          | Description                                        |
+  +----------------------------------+----------------------------------------------------+
+  | Cookie management                | In‑memory or persistent file storage (JSON)       |
+  | CSRF token handling              | Automatic extraction from HTML and injection      |
+  | HTTP methods                     | GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS      |
+  | Configurable timeout & User‑Agent| Default 30 sec, custom UA string                  |
+  | Structured logging               | Via `tracing` – set RUST_LOG env variable         |
+  | Comprehensive error types        | Network, I/O, JSON, Auth, API, CSRF, etc.         |
+  | Full endpoint coverage           | cekunit, dashboard, PIC, users, input data, etc.  |
+  | Export/Import operations         | CSV/JSON export, mass data import                  |
+  | Bulk delete                      | Delete all or by category column                   |
+  +----------------------------------+----------------------------------------------------+
+
+
+===============================================================================
+3. MODULES AND RE‑EXPORTS (src/lib.rs)
+===============================================================================
+
+The library re‑exports the most important types at the crate root:
+
+  • Client         – main API client (from `client::Client`)
+  • Config         – configuration struct (from `config`)
+  • CookieStore    – cookie persistence enum (from `config`)
+  • Error          – unified error type (from `error`)
+  • HttpMethod     – HTTP method enum (from `types`)
+
+Additionally, a utility function is available:
+
+  • init_tracing() – initialises the global tracing subscriber.
+
+All other modules are accessible via `librcekunit::module_name`, but most users
+will only need the `Client` interface.
+
+
+===============================================================================
+4. STRUCT Config (src/config.rs)
+===============================================================================
+
+Configuration container for the HTTP client.
+
+4.1 PUBLIC FIELDS
+
+  +--------------+-----------+-----------------------------------------------+
+  | Field        | Type      | Description                                   |
+  +--------------+-----------+-----------------------------------------------+
+  | base_url     | String    | API root URL, without trailing slash         |
+  | timeout      | Duration  | Request timeout (default 30 seconds)         |
+  | user_agent   | String    | User‑Agent header (default "librcekunit/2.0")|
+  | cookie_store | CookieStore| Cookie persistence policy                     |
+  +--------------+-----------+-----------------------------------------------+
+
+4.2 METHODS
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn from_env() -> Result<Self, Error>                                    │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Reads BASE_URL from environment variable. Also loads .env file if       │
+  │ present. Returns Error::Config if BASE_URL is missing.                  │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn new(base_url: &str) -> Self                                          │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Creates a Config with default values:                                   │
+  │   timeout = 30 seconds                                                  │
+  │   user_agent = "librcekunit/2.0"                                        │
+  │   cookie_store = CookieStore::Persistent("librcekunit_cookies.json")    │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn with_timeout(self, secs: u64) -> Self                                │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Builder‑style setter for timeout (in seconds).                          │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn with_user_agent(self, ua: &str) -> Self                              │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Builder‑style setter for the User‑Agent header.                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn with_cookie_store(self, store: CookieStore) -> Self                  │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Builder‑style setter for cookie storage policy.                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+
+===============================================================================
+5. ENUM CookieStore (src/config.rs)
+===============================================================================
+
+Determines how cookies are persisted.
+
+  +-------------+-----------------------------------------------------------+
+  | Variant     | Behaviour                                                 |
+  +-------------+-----------------------------------------------------------+
+  | None        | No persistence – cookies are lost when the Client drops. |
+  | Memory      | Keep cookies only in memory for the lifetime of Client.  |
+  | Persistent  | Save cookies to a JSON file at the given PathBuf.        |
+  | (PathBuf)   | Loaded at client creation, saved after every request.    |
+  +-------------+-----------------------------------------------------------+
+
+
+===============================================================================
+6. STRUCT Client (src/client.rs)
+===============================================================================
+
+Main entry point for all API interactions. Wraps an `HttpClient` and provides
+convenience methods for every endpoint.
+
+6.1 CONSTRUCTOR
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ async fn new(config: Config) -> Result<Self, Error>                     │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Creates a new Client. Initialises the underlying HTTP client, loads    │
+  │ cookies (if persistent), and prepares the CSRF token store.            │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+6.2 AUTHENTICATION METHODS
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ async fn login(&self, email: &str, password: &str) -> Result<(), Error> │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Performs a full login workflow:                                         │
+  │   1. Fetches CSRF token from `/login` page.                             │
+  │   2. Submits credentials with the token.                                │
+  │   3. On success, resets the internal CSRF token (session established). │
+  │ Returns Error::Auth for invalid credentials.                            │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ async fn logout(&self) -> Result<(), Error>                             │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Sends POST to `/logout`, clears persistent cookie file (if any) and    │
+  │ resets the CSRF token.                                                  │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+6.3 LOW‑LEVEL ACCESS
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn http(&self) -> &HttpClient                                           │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Returns a reference to the internal HttpClient (for advanced use).     │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ async fn request(&self, method: HttpMethod, path: &str,                 │
+  │                  body: Option<HashMap<String, String>>)                 │
+  │                  -> Result<reqwest::Response, Error>                    │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Generic request builder. For GET/HEAD the body becomes query params;   │
+  │ for others it becomes form data. CSRF token is automatically added     │
+  │ to non‑GET requests.                                                    │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+6.4 ENDPOINT METHODS (all async, return Result<reqwest::Response, Error>)
+
+  ---------------------------------------------------------------------------
+  DASHBOARD
+  ---------------------------------------------------------------------------
+  • dashboard_index()
+  • dashboard_index_with_params(params: HashMap<String, String>)
+
+  ---------------------------------------------------------------------------
+  CEKUNIT (basic CRUD)
+  ---------------------------------------------------------------------------
+  • cekunit_index()
+  • cekunit_index_with_params(params)
+  • cekunit_create()
+  • cekunit_store(data: HashMap<String, String>)
+  • cekunit_show(no: u64)
+  • cekunit_edit(no: u64)
+  • cekunit_update(no: u64, data)
+  • cekunit_destroy(no: u64)
+
+  ---------------------------------------------------------------------------
+  DASHBOARD ACTIONS (bulk operations)
+  ---------------------------------------------------------------------------
+  • dashboard_delete_all()
+  • cekunit_delete_by_category(column: &str, value: &str)
+  • cekunit_export(format: &str, sort: &str, direction: &str)
+  • cekunit_get_unique_values(column: &str)
+
+  ---------------------------------------------------------------------------
+  INPUT USER (full CRUD + export/import)
+  ---------------------------------------------------------------------------
+  • input_user_index()
+  • input_user_index_with_params(params)
+  • input_user_create()
+  • input_user_store(data)
+  • input_user_show(id: u64)
+  • input_user_edit(id: u64)
+  • input_user_update(id: u64, data)
+  • input_user_destroy(id: u64)
+  • input_user_export(params: HashMap<String, String>)
+  • input_user_import(data: HashMap<String, String>)
+
+  ---------------------------------------------------------------------------
+  INPUT DATA (create only)
+  ---------------------------------------------------------------------------
+  • input_data_create()
+  • input_data_store(data)
+
+  ---------------------------------------------------------------------------
+  PIC (Person In Charge)
+  ---------------------------------------------------------------------------
+  • pic_index()
+  • pic_index_with_params(params)
+  • pic_create()
+  • pic_store(data)
+  • pic_show(nomor: u64)
+  • pic_edit(nomor: u64)
+  • pic_update(nomor: u64, data)
+  • pic_destroy(nomor: u64)
+  • dashboard_pic_index()
+  • dashboard_pic_index_with_params(params)
+  • input_pic_create()
+  • input_pic_store(data)
+
+  ---------------------------------------------------------------------------
+  USERS
+  ---------------------------------------------------------------------------
+  • users_index()
+  • users_index_with_params(params)
+  • users_create()
+  • users_store(data)
+  • users_show(nomor: u64)
+  • users_edit(nomor: u64)
+  • users_update(nomor: u64, data)
+  • users_destroy(nomor: u64)
+  • dashboard_users_index()
+  • dashboard_users_index_with_params(params)
+
+
+===============================================================================
+7. STRUCT HttpClient (src/http_client.rs)
+===============================================================================
+
+Internal HTTP client. Not exported directly, but accessible via
+`Client::http()`. It manages cookie jars, CSRF tokens, and request building.
+
+PUBLIC METHODS (available through the reference):
+
+  +--------------------------+-----------------------------------------------+
+  | Method                   | Description                                   |
+  +--------------------------+-----------------------------------------------+
+  | fn base_url(&self) -> &str                                          |
+  | fn cookie_jar(&self) -> &Arc<Jar>                                   |
+  | async fn fetch_csrf_token(&self, url: &str) -> Result<String, Error>|
+  | fn parse_csrf_from_html(html: &str) -> Result<String, Error>        |
+  | async fn set_csrf_token(&self, token: String)                       |
+  | async fn get_csrf_token(&self) -> Option<String>                    |
+  | async fn request(...) -> Result<reqwest::Response, Error>           |
+  | async fn clear_session(&self)                                       |
+  | async fn reset_csrf_token(&self)                                    |
+  +--------------------------+-----------------------------------------------+
+
+
+===============================================================================
+8. ENUM Error (src/error.rs)
+===============================================================================
+
+All errors that can be returned by the library.
+
+  +------------------+-----------------------------------------------------+
+  | Variant          | Description                                         |
+  +------------------+-----------------------------------------------------+
+  | Config(String)   | Configuration error (e.g., BASE_URL missing)       |
+  | Reqwest(reqwest::Error) | Network / HTTP error                         |
+  | Io(std::io::Error)      | Filesystem I/O error                         |
+  | Json(serde_json::Error) | JSON serialization/deserialization error     |
+  | Auth(String)      | Authentication failure (invalid credentials)       |
+  | Api(u16, String)  | API returned an HTTP error (status code, message)  |
+  | CsrfNotFound      | CSRF token not found in HTML response              |
+  | NotLoggedIn       | Attempt to access protected endpoint without login|
+  | CookieStore(String)| Cookie persistence error (e.g., file write fail)  |
+  +------------------+-----------------------------------------------------+
+
+All variants implement `std::error::Error` and `std::fmt::Display` via `thiserror`.
+
+
+===============================================================================
+9. MODULE types (src/types.rs)
+===============================================================================
+
+9.1 ENUM HttpMethod
+
+  Variants: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
+
+  Methods:
+    • fn as_str(&self) -> &'static str
+    • Implements Display (so `to_string()` works)
+
+9.2 FUNCTION join_url(base: &str, path: &str) -> String
+
+  Joins a base URL and a path, handling duplicate slashes. If `path` starts
+  with "http", it is returned as‑is (absolute URL).
+
+9.3 STRUCT ApiResponse<T>
+
+  Generic wrapper for JSON API responses.
+
+  Fields:
+    • status: String      – typically "success" or "error"
+    • data: Option<T>     – payload if present
+    • message: Option<String> – optional human‑readable message
+
+  Implements Serialize and Deserialize from serde.
+
+
+===============================================================================
+10. MODULE cookies (src/cookies.rs)
+===============================================================================
+
+Low‑level functions to save/load cookies from a JSON file. Usually not needed
+directly because `HttpClient` handles persistence automatically.
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn save_cookies_to_file(jar: &Jar, url: &str, path: &Path)              │
+  │   -> Result<(), Error>                                                  │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Saves all cookies from the jar that match the given URL to a JSON file. │
+  │ If no cookies exist, the file is removed.                               │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn load_cookies_from_file(jar: &Jar, url: &str, path: &Path)            │
+  │   -> Result<(), Error>                                                  │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Loads cookies from a JSON file into the jar. If the file does not       │
+  │ exist, returns Ok(()) without error.                                    │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+Both functions panic if the URL string cannot be parsed (this should not happen
+with a valid base URL from `Config`).
+
+
+===============================================================================
+11. MODULE api (src/api/*.rs)
+===============================================================================
+
+These raw functions are used internally by `Client`. They accept an
+`&HttpClient` and provide endpoint‑specific requests. You may use them directly
+if you have a custom `HttpClient` instance, but the recommended way is to use
+`Client` methods.
+
+All functions have the same signature pattern:
+
+  async fn endpoint_name(client: &HttpClient, ...) -> Result<reqwest::Response, Error>
+
+For brevity, only the names are listed below. See the source code or the
+`Client` method documentation for exact parameters.
+
+11.1 api::auth
+  • login(client, email, password) -> Result<(), Error>
+  • logout(client) -> Result<(), Error>
+
+11.2 api::crud (cekunit)
+  • index, index_with_params, create, store, show, edit, update, destroy
+
+11.3 api::dashboard
+  • dashboard_index, dashboard_index_with_params, delete_all, delete_by_category,
+    export, get_unique_values
+
+11.4 api::input_data
+  • create, store
+
+11.5 api::input_user
+  • index, index_with_params, create, store, show, edit, update, destroy,
+    export, import
+
+11.6 api::pic
+  • index, index_with_params, create, store, show, edit, update, destroy,
+    dashboard_index, dashboard_index_with_params, input_create, input_store
+
+11.7 api::users
+  • index, index_with_params, create, store, show, edit, update, destroy,
+    dashboard_index, dashboard_index_with_params
+
+
+===============================================================================
+12. UTILITY FUNCTION init_tracing (src/lib.rs)
+===============================================================================
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ fn init_tracing()                                                       │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ Initialises the global `tracing` subscriber with a formatted writer    │
+  │ and an env filter. The log level can be set via the `RUST_LOG`         │
+  │ environment variable. Default level is "info".                          │
+  │                                                                         │
+  │ Example:                                                                │
+  │   $ RUST_LOG=debug cargo run                                            │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+
+===============================================================================
+13. COMPLETE USAGE EXAMPLES
+===============================================================================
+
+13.1 Basic login and data retrieval
+
+  use librcekunit::{Client, Config};
+  use std::collections::HashMap;
+
+  #[tokio::main]
+  async fn main() -> Result<(), Box<dyn std::error::Error>> {
+      librcekunit::init_tracing();
+
+      let config = Config::from_env()
+          .unwrap_or_else(|_| Config::new("http://localhost:8080"))
+          .with_timeout(30);
+
+      let client = Client::new(config).await?;
+
+      // Login
+      client.login("admin@example.com", "password123").await?;
+
+      // Get first page of cekunit data
+      let resp = client.cekunit_index().await?;
+      println!("GET /cekunit -> status {}", resp.status());
+
+      // Query with parameters
+      let mut params = HashMap::new();
+      params.insert("page".to_string(), "2".to_string());
+      params.insert("sort".to_string(), "id".to_string());
+      let resp = client.cekunit_index_with_params(params).await?;
+
+      client.logout().await?;
+      Ok(())
+  }
+
+13.2 Creating a new input data record
+
+  let mut data = HashMap::new();
+  data.insert("no_perjanjian".into(), "OD-26-F0000999".into());
+  data.insert("nama_nasabah".into(), "Budi Santoso".into());
+  data.insert("nopol".into(), "B 1234 ABC".into());
+  data.insert("kategori".into(), "A".into());
+  data.insert("status".into(), "JG".into());
+
+  match client.input_data_store(data).await {
+      Ok(resp) if resp.status().is_success() => println!("Created"),
+      Ok(resp) => eprintln!("HTTP error: {}", resp.status()),
+      Err(e) => eprintln!("Request failed: {}", e),
+  }
+
+13.3 Exporting input users as CSV with date filters
+
+  let mut params = HashMap::new();
+  params.insert("format".into(), "csv".into());
+  params.insert("start_date".into(), "2026-01-01".into());
+  params.insert("end_date".into(), "2026-12-31".into());
+  params.insert("sort".into(), "created_at".into());
+
+  let resp = client.input_user_export(params).await?;
+  let content = resp.bytes().await?;
+  std::fs::write("export.csv", content)?;
+
+13.4 Handling authentication errors
+
+  match client.login("user@example.com", "wrong").await {
+      Ok(()) => println!("OK"),
+      Err(Error::Auth(msg)) => eprintln!("Login failed: {}", msg),
+      Err(e) => eprintln!("Other error: {}", e),
+  }
+
+13.5 Using the low‑level request method
+
+  use librcekunit::HttpMethod;
+
+  let resp = client.request(
+      HttpMethod::GET,
+      "/some/custom/endpoint",
+      Some([("key", "value")].iter().map(|(k,v)| (k.to_string(), v.to_string())).collect())
+  ).await?;
+
+
+===============================================================================
+14. LICENSE INFORMATION
+===============================================================================
+
+This library is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For the full license text, see the file `LICENSE` in the repository.
+
+Repository:   https://codeberg.org/mroczect/librcekunit.git
+Issues:       https://codeberg.org/mroczect/librcekunit.git/issues
