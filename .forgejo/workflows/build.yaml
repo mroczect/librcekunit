@@ -11,7 +11,7 @@ env:
 
 jobs:
   build-and-test:
-    runs-on: codeberg-small
+    runs-on: codeberg-tiny
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
