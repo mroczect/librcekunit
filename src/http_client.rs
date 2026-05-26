@@ -1,15 +1,29 @@
 //! HTTP client with cookie persistence and CSRF token management.
 //!
-//! This module provides `HttpClient`, a wrapper around `reqwest::Client` that adds:
-//! * Automatic cookie saving/loading to/from a file
-//! * CSRF token extraction and injection for forms
-//! * Request tracing via `tracing`
-//! * Builder‑style configuration via `Config`
+//! This module provides [`HttpClient`], a wrapper around
+//! [`reqwest::Client`] that adds:
 //!
-//! # Examples
+//! * Automatic cookie saving / loading to / from a JSON file.
+//! * CSRF token extraction from HTML forms and automatic injection into
+//!   mutating requests.
+//! * Request tracing via [`tracing`].
+//! * Builder‑style configuration through [`Config`].
+//!
+//! # Security
+//!
+//! * CSRF tokens are fetched on demand and stored in an asynchronous
+//!   lock. They are never logged.
+//! * Persistent cookie files are written with standard filesystem
+//!   permissions. Ensure the path is secure.
+//! * The underlying `reqwest` client enforces a maximum of 5 redirects.
+//!
+//! # Usage
 //!
 //! ```no_run
-//! use librcekunit::{Config, HttpClient};
+//! use librcekunit::http_client::HttpClient;
+//! use librcekunit::Config;
+//! use librcekunit::types::HttpMethod;
+//! use std::collections::HashMap;
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = Config::new("https://example.com");
@@ -19,11 +33,9 @@
 //! let token = client.fetch_csrf_token("/login").await?;
 //!
 //! // Send a POST request with form data (CSRF token auto‑injected)
-//! let response = client.request(
-//!     librcekunit::HttpMethod::POST,
-//!     "/submit",
-//!     Some([("field", "value")].into_iter().map(|(k,v)| (k.to_string(), v.to_string())).collect())
-//! ).await?;
+//! let mut form = HashMap::new();
+//! form.insert("field".to_string(), "value".to_string());
+//! let response = client.request(HttpMethod::POST, "/submit", Some(form)).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -41,25 +53,33 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, instrument, warn};
 
+/// Default URL path used to obtain a CSRF token when none is stored.
+const DEFAULT_CSRF_PATH: &str = "/";
+
 /// HTTP client with automatic CSRF token handling and cookie persistence.
 ///
-/// `HttpClient` wraps a `reqwest::Client` and adds:
-/// * A cookie jar (`Arc<Jar>`) that can be persisted to disk.
-/// * An optional CSRF token stored in an `RwLock`.
-/// * Automatic token injection for non‑GET/HEAD requests.
-/// * Cookie saving after each request when persistent storage is configured.
+/// `HttpClient` wraps a [`reqwest::Client`] and augments it with:
+///
+/// * A shared cookie jar ([`Arc<Jar>`]) that can be persisted to disk.
+/// * An optional CSRF token guarded by an [`RwLock`].
+/// * Automatic token injection for requests that modify state
+///   (`POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`).
+/// * Cookie saving after each request when a persistent store is configured.
 ///
 /// # Fields (private)
-/// * `client` – The underlying reqwest client.
-/// * `base_url` – Base URL for all requests.
+///
+/// * `client` – The underlying `reqwest` client.
+/// * `base_url` – Base URL for all requests (trimmed, no trailing slash).
 /// * `cookie_jar` – Shared cookie jar.
 /// * `csrf_token` – Optionally stored CSRF token.
-/// * `cookie_file` – Path to cookie file if persistence is enabled.
+/// * `cookie_file` – Path to the JSON cookie file, if persistence is enabled.
 ///
 /// # Examples
 ///
 /// ```no_run
-/// # use librcekunit::{Config, HttpClient};
+/// use librcekunit::http_client::HttpClient;
+/// use librcekunit::Config;
+///
 /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = Config::new("https://example.com");
 /// let client = HttpClient::new(&config).await?;
@@ -76,28 +96,32 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    /// Creates a new `HttpClient` from a configuration.
+    /// Creates a new `HttpClient` from a [`Config`].
     ///
-    /// Builds a `reqwest::Client` with the provided user agent, timeout, and
-    /// cookie provider. If `config.cookie_store` is `Persistent(path)`,
-    /// cookies are loaded from that file (if exists) and will be saved after
-    /// every request.
+    /// The underlying `reqwest::Client` is built with:
+    ///
+    /// * The user agent and timeout from the config.
+    /// * A cookie provider pointing to an internal [`Arc<Jar>`].
+    /// * A redirect policy of at most 5 hops.
+    ///
+    /// If `config.cookie_store` is [`CookieStore::Persistent`], cookies are
+    /// loaded from the given file (if it exists). Failures during loading are
+    /// logged as warnings and do **not** abort construction.
     ///
     /// # Arguments
     ///
-    /// * `config` – Configuration object containing base URL, timeout, user agent,
-    ///   and cookie store policy.
+    /// * `config` – Configuration object.
     ///
     /// # Errors
     ///
-    /// Returns `Error::Reqwest` if building the underlying client fails.
-    /// Any error while loading cookies is logged as a warning but does not
-    /// cause the construction to fail.
+    /// * [`Error::Reqwest`] – If the underlying client cannot be built.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// # use librcekunit::{Config, HttpClient};
+    /// use librcekunit::http_client::HttpClient;
+    /// use librcekunit::Config;
+    ///
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = Config::new("https://example.com");
     /// let client = HttpClient::new(&config).await?;
@@ -140,13 +164,16 @@ impl HttpClient {
 
     /// Returns the base URL used for all requests.
     ///
+    /// The returned string has no trailing slash.
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use librcekunit::HttpClient;
-    /// # // In real code, you'd have an instance. Here we just show the call.
+    /// use librcekunit::http_client::HttpClient;
+    /// // In real code you would have an instance.
     /// // let base = client.base_url();
     /// ```
+    #[inline]
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
@@ -158,32 +185,39 @@ impl HttpClient {
     /// # Examples
     ///
     /// ```
-    /// # use librcekunit::HttpClient;
+    /// use librcekunit::http_client::HttpClient;
     /// // let jar = client.cookie_jar();
     /// ```
+    #[inline]
     pub fn cookie_jar(&self) -> &Arc<Jar> {
         &self.cookie_jar
     }
 
-    /// Fetches a CSRF token from a given URL by parsing the HTML response.
+    /// Fetches a CSRF token from the given `url` by parsing the HTML
+    /// response.
     ///
-    /// Sends a GET request to the specified URL, parses the HTML for an
-    /// `<input name="_token" value="...">`, stores the token internally,
-    /// and returns it.
+    /// The path (or absolute URL) is joined with [`base_url`] if it is
+    /// relative. A `GET` request is sent, and the response body is searched
+    /// for an `<input name="_token" value="...">` element. The extracted
+    /// token is stored internally and returned.
     ///
     /// # Arguments
     ///
-    /// * `url` – Path or absolute URL (joined with `base_url`).
+    /// * `url` – A path (e.g., `"/login"`) or an absolute URL. An empty
+    ///   string is rejected before any network call.
     ///
     /// # Errors
     ///
-    /// Returns `Error::Reqwest` if the request fails.
-    /// Returns `Error::CsrfNotFound` if the token cannot be found in the HTML.
+    /// * [`Error::Api`] – Returned immediately if `url` is empty.
+    /// * [`Error::Reqwest`] – Network error, timeout, or invalid URL.
+    /// * [`Error::CsrfNotFound`] – The login page did not contain a CSRF
+    ///   token.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// # use librcekunit::HttpClient;
+    /// use librcekunit::http_client::HttpClient;
+    ///
     /// # async fn run(client: &HttpClient) -> Result<(), Box<dyn std::error::Error>> {
     /// let token = client.fetch_csrf_token("/login").await?;
     /// println!("Token: {}", token);
@@ -192,8 +226,13 @@ impl HttpClient {
     /// ```
     #[instrument(skip(self))]
     pub async fn fetch_csrf_token(&self, url: &str) -> Result<String, Error> {
-        debug!("Fetching CSRF token from {}", url);
+        if url.trim().is_empty() {
+            warn!("fetch_csrf_token called with empty URL");
+            return Err(Error::Api(400, "CSRF token URL cannot be empty".into()));
+        }
+
         let full_url = join_url(&self.base_url, url);
+        debug!("Fetching CSRF token from {}", full_url);
         let resp = self.client.get(&full_url).send().await?;
         let body = resp.text().await?;
         let token = Self::parse_csrf_from_html(&body)?;
@@ -202,23 +241,24 @@ impl HttpClient {
         Ok(token)
     }
 
-    /// Parses a CSRF token from HTML content.
+    /// Parses a CSRF token from an HTML string.
     ///
-    /// Looks for an `<input name="_token" value="...">` element and extracts
-    /// the `value` attribute.
+    /// Looks for the first `<input name="_token" value="...">` element and
+    /// extracts the `value` attribute.
     ///
     /// # Arguments
     ///
-    /// * `html` – HTML string to parse.
+    /// * `html` – Raw HTML content.
     ///
     /// # Errors
     ///
-    /// Returns `Error::CsrfNotFound` if the token input is missing.
+    /// * [`Error::CsrfNotFound`] – No matching element was found.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use librcekunit::HttpClient;
+    /// use librcekunit::http_client::HttpClient;
+    ///
     /// let html = r#"<input type="hidden" name="_token" value="abc123">"#;
     /// let token = HttpClient::parse_csrf_from_html(html).unwrap();
     /// assert_eq!(token, "abc123");
@@ -238,58 +278,69 @@ impl HttpClient {
     /// # Arguments
     ///
     /// * `token` – The token string to store.
+    #[inline]
     pub async fn set_csrf_token(&self, token: String) {
         *self.csrf_token.write().await = Some(token);
     }
 
     /// Returns the currently stored CSRF token, if any.
+    #[inline]
     pub async fn get_csrf_token(&self) -> Option<String> {
         self.csrf_token.read().await.clone()
     }
 
-    /// Ensures a CSRF token is present, fetching one if missing.
-    ///
-    /// If no token is stored, it fetches one from `/` (the root path).
+    /// Ensures a CSRF token is present, fetching one from
+    /// [`DEFAULT_CSRF_PATH`] if missing.
     ///
     /// # Errors
     ///
-    /// Returns any error from `fetch_csrf_token`.
+    /// Propagates any error from [`fetch_csrf_token`].
     async fn ensure_csrf_token(&self) -> Result<(), Error> {
         if self.get_csrf_token().await.is_none() {
-            debug!("CSRF token missing, auto-fetching from /");
-            self.fetch_csrf_token("/").await?;
+            debug!(
+                "CSRF token missing, auto-fetching from {}",
+                DEFAULT_CSRF_PATH
+            );
+            self.fetch_csrf_token(DEFAULT_CSRF_PATH).await?;
         }
         Ok(())
     }
 
-    /// Sends an HTTP request with automatic CSRF token injection and cookie persistence.
+    /// Sends an HTTP request with automatic CSRF token injection and cookie
+    /// persistence.
     ///
-    /// For `GET` and `HEAD` requests, any provided `body` is treated as query parameters.
-    /// For other methods (`POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`), the request
-    /// is sent as a form‑encoded body. A CSRF token is automatically added as
-    /// `_token` unless already present in the form.
+    /// * For `GET` and `HEAD` requests, the optional `body` map is sent as
+    ///   query parameters.
+    /// * For other methods (`POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`),
+    ///   the map is sent as `application/x-www-form-urlencoded` body. A CSRF
+    ///   token is automatically added as the `_token` field unless it is
+    ///   already present in the body.
     ///
-    /// After a successful request, cookies are saved to the persistent file if
-    /// `cookie_file` is configured.
+    /// If a persistent cookie file is configured, cookies are saved after
+    /// the response is received, regardless of the HTTP status. Save errors
+    /// are logged as warnings.
     ///
     /// # Arguments
     ///
-    /// * `method` – HTTP method.
-    /// * `path` – Path relative to `base_url` (or absolute).
-    /// * `body` – For `GET/HEAD`: query parameters as `HashMap`.
-    ///            For others: form data.
+    /// * `method` – The HTTP method.
+    /// * `path` – Path relative to `base_url` (or absolute). An empty
+    ///   string is rejected.
+    /// * `body` – For `GET`/`HEAD`: query parameters. For others: form data.
     ///
     /// # Errors
     ///
-    /// Returns `Error::Reqwest` for network failures.
-    /// Returns `Error::CsrfNotFound` if CSRF token is needed but cannot be fetched.
-    /// Returns `Error::Io` or `Error::Json` if cookie saving fails (logged as warning).
+    /// * [`Error::Api`] – Returned immediately if `path` is empty.
+    /// * [`Error::Reqwest`] – Network failure.
+    /// * [`Error::CsrfNotFound`] – A CSRF token was required but could not
+    ///   be fetched.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// # use librcekunit::{HttpClient, HttpMethod};
-    /// # use std::collections::HashMap;
+    /// use librcekunit::http_client::HttpClient;
+    /// use librcekunit::types::HttpMethod;
+    /// use std::collections::HashMap;
+    ///
     /// # async fn run(client: &HttpClient) -> Result<(), Box<dyn std::error::Error>> {
     /// let mut params = HashMap::new();
     /// params.insert("search".to_string(), "rust".to_string());
@@ -308,6 +359,11 @@ impl HttpClient {
         path: &str,
         body: Option<HashMap<String, String>>,
     ) -> Result<reqwest::Response, Error> {
+        if path.trim().is_empty() {
+            warn!("request called with empty path");
+            return Err(Error::Api(400, "Request path cannot be empty".into()));
+        }
+
         let url = join_url(&self.base_url, path);
         debug!(%method, %url, "Sending request");
 
@@ -348,16 +404,19 @@ impl HttpClient {
         Ok(resp)
     }
 
-    /// Clears the session: resets CSRF token and removes the cookie file (if any).
+    /// Clears the session: resets CSRF token and removes the cookie file (if
+    /// any).
     ///
     /// This method:
     /// 1. Sets the stored CSRF token to an empty string.
-    /// 2. If a persistent cookie file exists, deletes it.
+    /// 2. If a persistent cookie file exists, deletes it. Deletion errors
+    ///    are silently ignored.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// # use librcekunit::HttpClient;
+    /// use librcekunit::http_client::HttpClient;
+    ///
     /// # async fn run(client: &HttpClient) {
     /// client.clear_session().await;
     /// # }
@@ -366,19 +425,22 @@ impl HttpClient {
         self.set_csrf_token(String::new()).await;
         if let Some(ref path) = self.cookie_file {
             if path.exists() {
-                let _ = std::fs::remove_file(path);
+                if let Err(e) = std::fs::remove_file(path) {
+                    warn!("Failed to remove cookie file during session clear: {}", e);
+                }
             }
         }
     }
 
     /// Resets the stored CSRF token to `None`.
     ///
-    /// This forces the next non‑GET request to fetch a fresh token.
+    /// This forces the next mutating request to fetch a fresh token.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// # use librcekunit::HttpClient;
+    /// use librcekunit::http_client::HttpClient;
+    ///
     /// # async fn run(client: &HttpClient) {
     /// client.reset_csrf_token().await;
     /// # }
