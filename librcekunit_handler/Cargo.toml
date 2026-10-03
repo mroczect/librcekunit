@@ -1,0 +1,21 @@
+[package]
+name = "librcekunit_handler"
+version = "3.0.0"
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Pure contracts (types, traits, errors, config) for librcekunit."
+readme = "README.md"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+
+[lints]
+workspace = true

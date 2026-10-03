@@ -1,0 +1,26 @@
+[package]
+name = "librcekunit_client"
+version = "3.0.0"
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Ergonomic facade for librcekunit"
+readme = "README.md"
+
+[dependencies]
+librcekunit_api = { path = "../librcekunit_api" }
+librcekunit_handler = { path = "../librcekunit_handler" }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi", "std"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync", "fs"] }
+wiremock = "0.6"
+
+[lints]
+workspace = true

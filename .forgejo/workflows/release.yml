@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release"
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build release
+    runs-on: docker
+    container:
+      image: docker.io/rust:1.96-slim
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install native dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake perl ca-certificates
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-
+
+      - name: Build release
+        run: cargo build --workspace --release --all-features
+
+      - name: Run tests
+        run: cargo test --workspace --release --all-features
+
+      - name: Create source archive
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          git archive --format=tar.gz \
+            --prefix=librcekunit-${TAG}/ \
+            -o librcekunit-${TAG}.tar.gz HEAD
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-archive
+          path: "*.tar.gz"
+          if-no-files-found: error

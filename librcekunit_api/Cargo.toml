@@ -1,0 +1,28 @@
+[package]
+name = "librcekunit_api"
+version = "3.0.0"
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "HTTP API implementation for librcekunit"
+readme = "README.md"
+
+[dependencies]
+librcekunit_handler = { path = "../librcekunit_handler" }
+serde_json = "1"
+reqwest = { version = "0.13", default-features = false, features = ["cookies", "multipart", "rustls", "gzip", "brotli", "deflate", "form", "query"] }
+tokio = { version = "1", features = ["sync", "fs", "rt", "macros"] }
+scraper = "0.27"
+url = "2"
+
+[dev-dependencies]
+wiremock = "0.6"
+
+[lints]
+workspace = true
