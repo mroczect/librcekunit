@@ -40,7 +40,6 @@ fn test_config_new_no_slash() {
 #[test]
 fn test_config_new_empty_base() {
     let cfg = Config::new("");
-    // Empty base URL is normalized to "/" to avoid malformed absolute URLs.
     assert_eq!(cfg.base_url, "/");
 }
 

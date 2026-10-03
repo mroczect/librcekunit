@@ -5,7 +5,7 @@ on:
     branches: ["main", "stable"]
   pull_request:
     branches: ["main", "stable"]
-  workflow_dispatch:  # bisa dijalankan manual
+  workflow_dispatch:  
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,22 +15,19 @@ jobs:
   build-and-test:
     runs-on: docker
     container:
-      image: rust:latest  # bisa ganti ke rust:stable jika perlu
-    timeout-minutes: 30   # tambahkan timeout agar tidak hang
+      image: rust:latest  
+    timeout-minutes: 30   
 
     steps:
-      # 1. Install system dependencies (Node.js hanya jika diperlukan)
       - name: Install system packages
         run: |
           apt-get update
           apt-get install -y --no-install-recommends nodejs npm
           rm -rf /var/lib/apt/lists/*
 
-      # 2. Checkout kode
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 3. Cache Cargo registry (menghemat waktu build)
       - name: Cache Cargo registry
         uses: actions/cache@v4
         with:
@@ -39,7 +36,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
-      # 4. Cache target folder
       - name: Cache Cargo target
         uses: actions/cache@v4
         with:
@@ -48,33 +44,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-target-
 
-      # 5. Pastikan menggunakan Rust stable (opsional, image rust:latest sudah stable)
       - name: Set up Rust toolchain
         run: |
           rustup default stable
           rustup component add clippy rustfmt
 
-      # 6. Build (debug)
       - name: Build (debug)
         run: cargo build --verbose
 
-      # 7. Jalankan tes
       - name: Run tests
         run: cargo test --verbose
 
-      # 8. Build release
       - name: Build release
         run: cargo build --release --verbose
 
-      # 9. Linting dengan clippy (opsional, untuk stabilitas kode)
       - name: Run clippy
         run: cargo clippy -- -D warnings
 
-      # 10. Format check
       - name: Check formatting
         run: cargo fmt -- --check
 
-      # 11. Upload artefak (hanya untuk branch 'main' atau 'stable')
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
