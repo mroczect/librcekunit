@@ -1,0 +1,14 @@
+language = "C"
+header = "/* librcekunit C ABI. Auto-generated. Do not edit. */"
+include_guard = "LIBRCEKUNIT_H"
+tab_width = 4
+line_length = 100
+documentation = true
+documentation_style = "c"
+cpp_compat = true
+
+[export]
+
+[enum]
+prefix_with_name = true
+rename_variants = "screaming_snake_case"

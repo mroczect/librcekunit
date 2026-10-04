@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["app/cli","librcekunit_api","librcekunit_client", "librcekunit_examples","librcekunit_handler", "app/cli",]
+members = ["app/cli","librcekunit_api","librcekunit_client", "librcekunit_examples","librcekunit_handler", "app/cli", "librcekunit_c_binding",]
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

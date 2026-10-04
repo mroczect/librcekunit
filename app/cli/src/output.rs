@@ -136,11 +136,7 @@ pub async fn download_csv(start_date: &str, end_date: &str) -> Result<Vec<u8>> {
     }
 }
 
-async fn fetch_csv_once(
-    start_date: &str,
-    end_date: &str,
-    fresh_login: bool,
-) -> Result<Vec<u8>> {
+async fn fetch_csv_once(start_date: &str, end_date: &str, fresh_login: bool) -> Result<Vec<u8>> {
     use librcekunit_client::prelude::{Form, InputUser};
 
     let client = if fresh_login {

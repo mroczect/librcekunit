@@ -1,0 +1,160 @@
+name: Release C Binding
+
+on:
+  push:
+    tags:
+      - 'c-binding-v*'      # trigger: git tag c-binding-v0.1.0
+  workflow_dispatch:        # atau manual dari UI
+
+permissions:
+  contents: write           # butuh untuk upload ke release
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            libname: liblibrcekunit
+            ext: so
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            libname: liblibrcekunit
+            ext: so
+            archive: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            libname: liblibrcekunit
+            ext: dylib
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            libname: liblibrcekunit
+            ext: dylib
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            libname: librcekunit
+            ext: dll
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools (Linux musl only)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build C binding only
+        run: |
+          cargo build --release \
+            -p librcekunit_c_binding \
+            --target ${{ matrix.target }}
+
+      - name: Locate artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_DIR="target/${{ matrix.target }}/release"
+          LIB="$TARGET_DIR/${{ matrix.libname }}.${{ matrix.ext }}"
+          STATIC="$TARGET_DIR/${{ matrix.libname }}.a"
+          HEADER="librcekunit_c_binding/include/librcekunit.h"
+
+          test -f "$LIB"   || { echo "missing $LIB"; exit 1; }
+          test -f "$HEADER" || { echo "missing $HEADER"; exit 1; }
+
+          echo "lib=$LIB"       >> "$GITHUB_OUTPUT"
+          echo "static=$STATIC" >> "$GITHUB_OUTPUT"
+          echo "header=$HEADER" >> "$GITHUB_OUTPUT"
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="librcekunit-c-binding-${{ matrix.target }}"
+          mkdir -p "$PKG/lib" "$PKG/include"
+
+          cp "${{ steps.artifacts.outputs.lib }}"    "$PKG/lib/"
+          cp "${{ steps.artifacts.outputs.header }}" "$PKG/include/"
+          if [ -f "${{ steps.artifacts.outputs.static }}" ]; then
+            cp "${{ steps.artifacts.outputs.static }}" "$PKG/lib/"
+          fi
+
+          # pkg-config
+          cat > "$PKG/lib/librcekunit.pc" <<EOF
+          prefix=\${pcfiledir}/../..
+          exec_prefix=\${prefix}
+          libdir=\${prefix}/lib
+          includedir=\${prefix}/include
+
+          Name: librcekunit
+          Description: C ABI bindings for librcekunit
+          Version: ${GITHUB_REF_NAME#c-binding-v}
+          Libs: -L\${libdir} -llibrcekunit -lpthread -ldl
+          Cflags: -I\${includedir}
+          EOF
+
+          tar -czf "$PKG.tar.gz" "$PKG"
+          echo "asset=$PKG.tar.gz" >> "$GITHUB_OUTPUT"
+        id: package_tar
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="librcekunit-c-binding-${{ matrix.target }}"
+          mkdir -p "$PKG/lib" "$PKG/include"
+          cp "${{ steps.artifacts.outputs.lib }}"    "$PKG/lib/"
+          cp "${{ steps.artifacts.outputs.header }}" "$PKG/include/"
+          if [ -f "${{ steps.artifacts.outputs.static }}" ]; then
+            cp "${{ steps.artifacts.outputs.static }}" "$PKG/lib/"
+          fi
+          7z a "$PKG.zip" "$PKG"
+          echo "asset=$PKG.zip" >> "$GITHUB_OUTPUT"
+        id: package_zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: librcekunit-c-binding-${{ matrix.target }}
+          path: |
+            librcekunit-c-binding-${{ matrix.target }}.tar.gz
+            librcekunit-c-binding-${{ matrix.target }}.zip
+          if-no-files-found: ignore
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/c-binding-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            librcekunit-c-binding-${{ matrix.target }}.tar.gz
+            librcekunit-c-binding-${{ matrix.target }}.zip
+          fail_on_unmatched_files: false

@@ -1,0 +1,37 @@
+[package]
+name = "librcekunit_c_binding"
+version = "3.0.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "C ABI bindings for librcekunit"
+
+[lib]
+name = "librcekunit"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+cbindgen = "0.28"
+librcekunit_client = { path = "../librcekunit_client" }
+librcekunit_handler = { path = "../librcekunit_handler" }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[build-dependencies]
+cbindgen = "0.28"
+
+[lints.rust]
+unsafe_code = "allow"
+missing_debug_implementations = "warn"
+rust_2018_idioms = "warn"
+unreachable_pub = "allow"      
+unused_qualifications = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+missing_safety_doc = "allow"
+missing_errors_doc = "allow"
+must_use_candidate = "allow"
