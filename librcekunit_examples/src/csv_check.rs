@@ -149,6 +149,10 @@ pub fn validate(text: &str) -> Result<CsvSummary, CsvError> {
 /// Returns [`CsvError::UnterminatedQuote`] when a quoted field is not
 /// closed before the end of the input.
 pub fn parse_records(text: &str) -> Result<Vec<Vec<String>>, CsvError> {
+    // Strip UTF-8 BOM if present, so the first header column is
+    // `no` rather than `\u{FEFF}no`.
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+
     let mut records: Vec<Vec<String>> = Vec::new();
     let mut current_record: Vec<String> = Vec::new();
     let mut current_field = String::new();
