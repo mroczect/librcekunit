@@ -8,3 +8,28 @@
 !.env.example
 session.json
 *.csv
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Env
+.env
+.env.local
+
+# Session
+session.json
+*_cookies.json
+
+# Backups
+backup_dashboard_*.csv
+pre_replace_backup_*.csv
+
+# Exports
+cekunit_*.csv
+export.csv
+input_user_export.csv
+workflow_export.csv
+
+# OS
+.DS_Store
