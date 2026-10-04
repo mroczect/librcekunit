@@ -2,3 +2,9 @@
 /target
 .snapcat.md
 .velodiff_dist.diff
+.env
+.env.local
+*.env
+!.env.example
+session.json
+*.csv

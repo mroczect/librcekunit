@@ -1,0 +1,23 @@
+[package]
+name = "librcekunit_examples"
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+documentation.workspace = true
+publish = false
+description = "Reference implementations and runnable examples for librcekunit_client."
+
+[dependencies]
+librcekunit_client = { path = "../librcekunit_client" }
+scraper = "0.27.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1.44"
+
+[lints]
+workspace = true
