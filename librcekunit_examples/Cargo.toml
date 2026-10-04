@@ -14,6 +14,7 @@ publish = false
 description = "Reference implementations and runnable examples for librcekunit_client."
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
 librcekunit_client = { path = "../librcekunit_client" }
 scraper = "0.27.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

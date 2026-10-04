@@ -7,6 +7,7 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+use clap as _;
 use tracing as _;
 
 pub mod auth;

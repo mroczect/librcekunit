@@ -39,7 +39,32 @@ pub struct CekUnitRow {
     pub tenor: String,
 }
 
-/// Error type for parse helpers.
+/// One row parsed from the input-user table.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InputUserRow {
+    /// Column: No.
+    pub no: String,
+    /// Column: Created at.
+    pub created_at: String,
+    /// Column: User ID.
+    pub user_id: String,
+    /// Column: Nopol.
+    pub nopol: String,
+    /// Column: Lokasi.
+    pub lokasi: String,
+    /// Column: ForN.
+    pub forn: String,
+    /// Column: Nama.
+    pub nama: String,
+    /// Column: Kategori.
+    pub kategori: String,
+    /// Column: Nama Nasabah.
+    pub nama_nasabah: String,
+    /// Column: No Perjanjian.
+    pub no_perjanjian: String,
+}
+
+/// Error returned by parse helpers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParseError {
@@ -71,10 +96,7 @@ pub fn parse_dashboard_rows(html: &str) -> Result<Vec<CekUnitRow>, ParseError> {
 
     let mut rows = Vec::new();
     for row in document.select(&row_selector) {
-        let cells: Vec<String> = row
-            .select(&cell_selector)
-            .map(|cell| cell_text(&cell))
-            .collect();
+        let cells: Vec<String> = row.select(&cell_selector).map(|c| cell_text(&c)).collect();
 
         if cells.len() < 17 {
             continue;
@@ -98,6 +120,43 @@ pub fn parse_dashboard_rows(html: &str) -> Result<Vec<CekUnitRow>, ParseError> {
             actual_penyelesaian: cell_at(&cells, 14),
             angsuran_ke: cell_at(&cells, 15),
             tenor: cell_at(&cells, 16),
+        });
+    }
+
+    Ok(rows)
+}
+
+/// Parse all data rows from the input-user HTML page.
+///
+/// # Errors
+///
+/// Returns [`ParseError::BadSelector`] if an internal selector fails.
+pub fn parse_input_user_rows(html: &str) -> Result<Vec<InputUserRow>, ParseError> {
+    let document = Html::parse_document(html);
+    let row_selector = Selector::parse("table#input-user-table tbody tr")
+        .map_err(|e| ParseError::BadSelector(format!("row: {e}")))?;
+    let cell_selector =
+        Selector::parse("td").map_err(|e| ParseError::BadSelector(format!("cell: {e}")))?;
+
+    let mut rows = Vec::new();
+    for row in document.select(&row_selector) {
+        let cells: Vec<String> = row.select(&cell_selector).map(|c| cell_text(&c)).collect();
+
+        if cells.len() < 10 {
+            continue;
+        }
+
+        rows.push(InputUserRow {
+            no: cell_at(&cells, 0),
+            created_at: cell_at(&cells, 1),
+            user_id: cell_at(&cells, 2),
+            nopol: cell_at(&cells, 3),
+            lokasi: cell_at(&cells, 4),
+            forn: cell_at(&cells, 5),
+            nama: cell_at(&cells, 6),
+            kategori: cell_at(&cells, 7),
+            nama_nasabah: cell_at(&cells, 8),
+            no_perjanjian: cell_at(&cells, 9),
         });
     }
 
@@ -145,7 +204,7 @@ fn cell_at(cells: &[String], index: usize) -> String {
     cells.get(index).cloned().unwrap_or_default()
 }
 
-/// Group rows by a caller-supplied key function.
+/// Group CekUnit rows by a caller-supplied key function.
 #[must_use]
 pub fn count_by<F>(rows: &[CekUnitRow], key: F) -> Vec<(String, usize)>
 where
@@ -168,7 +227,30 @@ where
     out
 }
 
-/// Serialize rows to CSV text with a fixed header.
+/// Group InputUser rows by a caller-supplied key function.
+#[must_use]
+pub fn count_by_input_user<F>(rows: &[InputUserRow], key: F) -> Vec<(String, usize)>
+where
+    F: Fn(&InputUserRow) -> String,
+{
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for row in rows {
+        let label = key(row);
+        let label = if label.is_empty() {
+            String::from("<empty>")
+        } else {
+            label
+        };
+        let entry = counts.entry(label).or_insert(0);
+        *entry = entry.saturating_add(1);
+    }
+
+    let mut out: Vec<(String, usize)> = counts.into_iter().collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    out
+}
+
+/// Serialize CekUnit rows to CSV text with a fixed header.
 #[must_use]
 pub fn rows_to_csv(rows: &[CekUnitRow]) -> String {
     let mut out = String::new();
@@ -196,6 +278,37 @@ pub fn rows_to_csv(rows: &[CekUnitRow]) -> String {
             &row.actual_penyelesaian,
             &row.angsuran_ke,
             &row.tenor,
+        ];
+        let line = fields
+            .iter()
+            .map(|f| csv_escape(f))
+            .collect::<Vec<_>>()
+            .join(",");
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out
+}
+
+/// Serialize InputUser rows to CSV text with a fixed header.
+#[must_use]
+pub fn input_user_rows_to_csv(rows: &[InputUserRow]) -> String {
+    let mut out = String::new();
+    out.push_str(
+        "no,created_at,user_id,nopol,lokasi,forn,nama,kategori,nama_nasabah,no_perjanjian\n",
+    );
+    for row in rows {
+        let fields = [
+            &row.no,
+            &row.created_at,
+            &row.user_id,
+            &row.nopol,
+            &row.lokasi,
+            &row.forn,
+            &row.nama,
+            &row.kategori,
+            &row.nama_nasabah,
+            &row.no_perjanjian,
         ];
         let line = fields
             .iter()
