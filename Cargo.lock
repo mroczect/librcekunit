@@ -1035,6 +1035,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "librcekunit_cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "librcekunit_client",
+ "librcekunit_examples",
+ "librcekunit_handler",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "librcekunit_client"
 version = "3.0.0"
 dependencies = [
