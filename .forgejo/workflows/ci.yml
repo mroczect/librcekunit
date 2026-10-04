@@ -7,11 +7,14 @@ on:
     branches: [master, main, develop]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: full
-  RUSTFLAGS: "-D warnings"
   CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
 
 jobs:
   fmt:
@@ -20,12 +23,9 @@ jobs:
     container:
       image: docker.io/rust:1.96-slim
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Add rustfmt
         run: rustup component add rustfmt
-
       - name: Check formatting
         run: cargo fmt --all --check
 
@@ -35,72 +35,78 @@ jobs:
     container:
       image: docker.io/rust:1.96-slim
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-clippy-
-            ${{ runner.os }}-
-
-      - name: Add clippy
-        run: rustup component add clippy
-
-      - name: Install native dependencies
+          key: clippy-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: clippy-
+      - name: Install native deps
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential pkg-config cmake perl ca-certificates
-
+      - name: Add clippy
+        run: rustup component add clippy
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.rust }})
     runs-on: docker
     container:
       image: docker.io/rust:1.96-slim
     strategy:
       fail-fast: false
       matrix:
-        os: [linux]
         rust: [stable, "1.96"]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install rust ${{ matrix.rust }}
+      - uses: actions/checkout@v4
+      - name: Install toolchain ${{ matrix.rust }}
         run: |
           rustup toolchain install ${{ matrix.rust }} --profile minimal
           rustup default ${{ matrix.rust }}
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-test-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-test-${{ matrix.rust }}-
-            ${{ runner.os }}-test-
-
-      - name: Install native dependencies
+          key: test-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: test-${{ matrix.rust }}-
+      - name: Install native deps
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential pkg-config cmake perl ca-certificates
-
       - name: Run tests
         run: cargo test --workspace --all-targets --all-features
+
+  examples:
+    name: Build examples
+    runs-on: docker
+    container:
+      image: docker.io/rust:1.96-slim
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: examples-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: examples-
+      - name: Install native deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake perl ca-certificates
+      - name: Build examples
+        run: cargo build -p librcekunit_examples --examples --all-features
 
   doc:
     name: Doc
@@ -108,27 +114,93 @@ jobs:
     container:
       image: docker.io/rust:1.96-slim
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-doc-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-doc-
-
-      - name: Install native dependencies
+          key: doc-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: doc-
+      - name: Install native deps
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential pkg-config cmake perl ca-certificates
-
       - name: Build docs
         env:
           RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --workspace --all-features --no-deps
+
+  audit:
+    name: Security audit
+    runs-on: docker
+    container:
+      image: docker.io/rust:1.96-slim
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: cargo-audit-bin
+      - name: Install native deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake perl ca-certificates
+      - name: Install cargo-audit
+        run: |
+          if ! command -v cargo-audit >/dev/null 2>&1; then
+            cargo install cargo-audit --locked
+          fi
+      - name: Run audit
+        run: cargo audit
+
+  deny:
+    name: License and dependency check
+    runs-on: docker
+    container:
+      image: docker.io/rust:1.96-slim
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: cargo-deny-bin
+      - name: Install native deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake perl ca-certificates
+      - name: Install cargo-deny
+        run: |
+          if ! command -v cargo-deny >/dev/null 2>&1; then
+            cargo install cargo-deny --locked
+          fi
+      - name: Run deny
+        run: cargo deny check
+
+  machete:
+    name: Unused dependencies
+    runs-on: docker
+    container:
+      image: docker.io/rust:1.96-slim
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: cargo-machete-bin
+      - name: Install native deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake perl ca-certificates
+      - name: Install cargo-machete
+        run: |
+          if ! command -v cargo-machete >/dev/null 2>&1; then
+            cargo install cargo-machete --locked
+          fi
+      - name: Run machete
+        run: cargo machete
